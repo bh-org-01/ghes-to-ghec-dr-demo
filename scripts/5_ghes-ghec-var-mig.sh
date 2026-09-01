@@ -17,7 +17,7 @@ set -euo pipefail
 # ------------------------------------------------------------
 # ENV INPUTS
 # ------------------------------------------------------------
-CSV_FILE="${CSV_FILE:-repos.csv}"
+CSV_FILE="${CSV_FILE:-repo_migration_output.csv}"
 GH_PAT="${GH_PAT:?Set GH_PAT}"
 GH_SOURCE_PAT="${GH_SOURCE_PAT:?Set GH_SOURCE_PAT}"
 GHES_API_URL="${GHES_API_URL:?Set GHES_API_URL}"
@@ -150,25 +150,6 @@ repo_exists_target() {
 }
 
 # ------------------------------------------------------------
-# REVIEWER LOOKUP
-# ------------------------------------------------------------
-get_reviewer_id() {
-  local handle="$1"
-  local out
-  if out="$(
-    api_target \
-      "get reviewer id: $handle" \
-      "/users/$handle" \
-      --jq '.id'
-  )"; then
-    printf '%s' "$out"
-  else
-    printf ''
-    return 1
-  fi
-}
-
-# ------------------------------------------------------------
 # SUMMARY COUNTERS
 # ------------------------------------------------------------
 TOTAL_REPOS=0
@@ -189,93 +170,79 @@ sync_environment_data() {
   local src_full="$1"
   local tgt_full="$2"
   local env_name="$3"
-  local reviewer_handle="$4"
   local env_enc
   env_enc="$(urlencode "$env_name")"
+
+  # ----------------------------------------------------------
+  # CREATE TARGET ENVIRONMENT
+  # ----------------------------------------------------------
+  log_info "Creating environment: $env_name"
+
+  if api_target \
+    "create environment: $tgt_full / $env_name" \
+    -X PUT \
+    "/repos/$tgt_full/environments/$env_enc" \
+    >/dev/null; then
+
+    log_success "Environment created/validated: $env_name"
+
+  else
+    log_warn "Failed to create environment: $env_name"
+    return 1
+  fi
   local repo_env_rules_synced=0
   local repo_env_vars_synced=0
 
-  # ----------------------------------------------------------
-  # 1. SYNC ENVIRONMENT RULES
-  # ----------------------------------------------------------
-  local src_env_json reviewer_id payload
-  if ! src_env_json="$(
-    api_source \
-      "fetch source environment rules: $src_full / $env_name" \
-      "/repos/$src_full/environments/$env_enc"
-  )"; then
-    log_warn "Skipping environment rules for '$env_name' due to source fetch failure."
-  else
-    reviewer_id=""
-    if [[ -n "${reviewer_handle:-}" ]]; then
-      reviewer_id="$(
-        get_reviewer_id "$reviewer_handle" || true
-      )"
-      if [[ -z "$reviewer_id" ]]; then
-        log_warn "Reviewer '$reviewer_handle' not found on target host."
-      fi
-    fi
-    payload="$(
-      printf '%s' "$src_env_json" |
-      jq -c --arg rev_id "$reviewer_id" '
-        try (
-          (.protection_rules // []) as $rules
-          |
-          (
-            $rules
-            | map(select(.type=="wait_timer") | (.wait_timer // 0))
-            | .[0]
-          ) as $wt
-          |
-          (
-            $rules
-            | map(select(.type=="required_reviewers"))
-            | .[0]
-          ) as $rr
-          |
-          {}
-          +
-          (
-            if $wt == null
-            then {}
-            else {wait_timer:$wt}
-            end
-          )
-          +
-          (
-            if ($rr != null) and ($rev_id|length>0)
-            then {
-              reviewers: [
-                {
-                  type:"User",
-                  id: ($rev_id|tonumber)
-                }
-              ],
-              prevent_self_review:
-                ($rr.prevent_self_review // false)
-            }
-            else {}
-            end
-          )
-        ) catch {}
-      '
-    )"
-    if api_target \
-      "apply environment rules: $tgt_full / $env_name" \
-      -X PUT \
-      "/repos/$tgt_full/environments/$env_enc" \
-      --input - <<< "$payload" >/dev/null; then
+  # # ----------------------------------------------------------
+  # # 1. SYNC ENVIRONMENT RULES
+  # # ----------------------------------------------------------
+  # local src_env_json payload
+  # if ! src_env_json="$(
+  #   api_source \
+  #     "fetch source environment rules: $src_full / $env_name" \
+  #     "/repos/$src_full/environments/$env_enc"
+  # )"; then
+  #   log_warn "Skipping environment rules for '$env_name' due to source fetch failure."
+  # else
+  #   payload="$(
+  #     printf '%s' "$src_env_json" |
+  #     jq -c '
+  #       try (
+  #         (.protection_rules // []) as $rules
+  #         |
+  #         (
+  #           $rules
+  #           | map(select(.type=="wait_timer") | (.wait_timer // 0))
+  #           | .[0]
+  #         ) as $wt
+  #         |
+  #         {}
+  #         +
+  #         (
+  #           if $wt == null
+  #           then {}
+  #           else {wait_timer:$wt}
+  #           end
+  #         )
+  #       ) catch {}
+  #     '
+  #   )"
+  #   if api_target \
+  #     "apply environment rules: $tgt_full / $env_name" \
+  #     -X PUT \
+  #     "/repos/$tgt_full/environments/$env_enc" \
+  #     --input - <<< "$payload" >/dev/null; then
 
-      log_success "Env '$env_name' rules synced."
+  #     log_success "Env '$env_name' rules synced."
 
-      TOTAL_ENV_RULES_SYNCED=$((TOTAL_ENV_RULES_SYNCED + 1))
+  #     TOTAL_ENV_RULES_SYNCED=$((TOTAL_ENV_RULES_SYNCED + 1))
 
-      repo_env_rules_synced=1
+  #     repo_env_rules_synced=1
 
-    else
-      log_warn "Failed to sync environment rules for '$env_name'."
-    fi
-  fi
+  #   else
+  #     log_warn "Failed to sync environment rules for '$env_name'."
+  #   fi
+  # fi
 
   # ----------------------------------------------------------
   # 2. SYNC ENVIRONMENT VARIABLES
@@ -347,12 +314,23 @@ main() {
     log_error "CSV file not found: $CSV_FILE"
     exit 1
   }
-  while IFS=',' read -r s_org s_repo r_url r_size t_org t_repo t_vis reviewer_handle; do
+  while IFS=',' read -r s_org s_repo t_org t_repo t_vis migration_status log_file; do
     s_org="$(echo "${s_org:-}" | xargs)"
     s_repo="$(echo "${s_repo:-}" | xargs)"
     t_org="$(echo "${t_org:-}" | xargs)"
     t_repo="$(echo "${t_repo:-}" | xargs)"
-    reviewer_handle="$(echo "${reviewer_handle:-}" | xargs)"
+    migration_status="$(echo "${migration_status:-}" | xargs)"
+
+    if [[ -z "$migration_status" ]]; then
+        log_warn "Skipping $s_org/$s_repo because migration status is empty"
+        SKIPPED_REPOS=$((SKIPPED_REPOS + 1))
+        continue
+    fi
+    if [[ "$migration_status" != "Success" ]]; then
+        log_error "Skipping $s_org/$s_repo because repository migration status is $migration_status"
+        FAILED_REPOS=$((FAILED_REPOS + 1))
+        continue
+    fi
     [[ -z "$s_org" ]] && continue
     TOTAL_REPOS=$((TOTAL_REPOS + 1))
     local_repo_org_vars=0
@@ -468,7 +446,7 @@ main() {
     # --------------------------------------------------------
     # 3. ENVIRONMENTS
     # --------------------------------------------------------
-    log_info "Syncing Environments"
+    log_info "Syncing Environments (Environment creation + Variables only)"
 
     envs="$(
       api_source \
@@ -487,8 +465,7 @@ main() {
         sync_environment_data \
           "$src_full" \
           "$tgt_full" \
-          "$env" \
-          "$reviewer_handle"
+          "$env" 
         local_repo_envs=$((local_repo_envs + 1))
       done <<< "$envs"
     fi
@@ -508,6 +485,7 @@ main() {
   done < <(
     sed 's/\r$//' "$CSV_FILE" | tail -n +2
   )
+  
 
   # ----------------------------------------------------------
   # FINAL SUMMARY

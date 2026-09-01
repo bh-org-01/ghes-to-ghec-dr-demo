@@ -54,7 +54,7 @@ fi
 
 if [[ -z "${OUTPUT_PATH}" ]]; then
   timestamp="$(date +%Y%m%d-%H%M%S)"
-  OUTPUT_CSV_PATH="repo_migration_output-${timestamp}.csv"
+  OUTPUT_CSV_PATH="repo_migration_output.csv"
 else
   OUTPUT_CSV_PATH="${OUTPUT_PATH}"
 fi
