@@ -559,6 +559,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Download migration output artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: stage2-migration-${{ github.run_id }}
+          
       - name: Install prerequisites (GitHub-hosted only)
         if: ${{ inputs.runner == 'ubuntu-latest' }}
         shell: bash
@@ -573,12 +578,15 @@ jobs:
         shell: bash
         run: chmod +x scripts/*.sh
 
-      - name: Prepare CSV for vars script
+      - name: Prepare migration output CSV for vars script
         shell: bash
         run: |
           set -euo pipefail
-          cp "${{ inputs.csv_path }}" scripts/repos.csv
-          echo "✅ CSV copied: ${{ inputs.csv_path }} → scripts/repos.csv"
+          if [[ ! -f "repo_migration_output.csv" ]]; then
+            echo "repo_migration_output.csv not found"
+            exit 1
+          fi
+          echo "✅ Using repo_migration_output.csv for variables migration"
 
       - name: Authenticate GH CLI to GHES host (Stage 4 only)
         shell: bash
@@ -602,7 +610,7 @@ jobs:
         run: |
           GH_TARGET_HOST="$GH_TARGET_HOST"
           set -euo pipefail
-          export CSV_FILE="scripts/repos.csv"
+          export CSV_FILE="repo_migration_output.csv"
           ./scripts/5_ghes-ghec-var-mig.sh 2>&1 | tee vars_migration.log
 
       - name: Publish Stage 4 vars migration summary
@@ -670,5 +678,5 @@ jobs:
           name: stage4-vars-migration-${{ github.run_id }}
           path: |
             vars_migration.log
-            scripts/repos.csv
+            repo_migration_output.csv
           if-no-files-found: warn
