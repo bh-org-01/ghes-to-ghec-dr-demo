@@ -75,7 +75,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install prerequisites (GitHub-hosted only)
         if: ${{ inputs.runner == 'ubuntu-latest' }}
@@ -104,7 +104,9 @@ jobs:
 
       - name: Make scripts executable
         shell: bash
-        run: chmod +x scripts/*.sh
+        run: |
+          sed -i 's/\r$//' scripts/*.sh
+          chmod +x scripts/*.sh
 
       - name: Prepare CSV for scripts
         shell: bash
@@ -216,7 +218,7 @@ jobs:
 
       - name: Upload precheck artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: stage1-precheck-${{ github.run_id }}
           path: |
@@ -239,7 +241,7 @@ jobs:
           || needs.pre-migration-validation.result == 'skipped') }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install prerequisites (GitHub-hosted only)
         if: ${{ inputs.runner == 'ubuntu-latest' }}
@@ -267,7 +269,9 @@ jobs:
 
       - name: Make scripts executable
         shell: bash
-        run: chmod +x scripts/*.sh
+        run: |
+          sed -i 's/\r$//' scripts/*.sh
+          chmod +x scripts/*.sh
 
       - name: Prepare CSV for scripts
         shell: bash
@@ -365,7 +369,7 @@ jobs:
 
       - name: Upload migration artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: stage2-migration-${{ github.run_id }}
           path: |
@@ -389,7 +393,7 @@ jobs:
           || needs.migration.result == 'skipped') }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install prerequisites (GitHub-hosted only)
         if: ${{ inputs.runner == 'ubuntu-latest' }}
@@ -404,7 +408,9 @@ jobs:
 
       - name: Make scripts executable
         shell: bash
-        run: chmod +x scripts/*.sh
+        run: | 
+          sed -i 's/\r$//' scripts/*.sh
+          chmod +x scripts/*.sh
 
       - name: Prepare CSV for scripts
         shell: bash
@@ -533,7 +539,7 @@ jobs:
 
       - name: Upload post-validation artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: stage3-postvalidation-${{ github.run_id }}
           path: |
@@ -557,7 +563,7 @@ jobs:
       && needs.post-migration-validation.result == 'success' }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download migration output artifact
         uses: actions/download-artifact@v4
@@ -576,7 +582,9 @@ jobs:
 
       - name: Make scripts executable
         shell: bash
-        run: chmod +x scripts/*.sh
+        run: | 
+          sed -i 's/\r$//' scripts/*.sh
+          chmod +x scripts/*.sh
 
       - name: Prepare migration output CSV for vars script
         shell: bash
@@ -673,7 +681,7 @@ jobs:
 
       - name: Upload vars migration artifacts
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: stage4-vars-migration-${{ github.run_id }}
           path: |
