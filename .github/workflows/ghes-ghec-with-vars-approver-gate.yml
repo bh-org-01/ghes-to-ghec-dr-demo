@@ -7,7 +7,7 @@ on:
         description: >
           Runner selector. Use ubuntu-latest for GitHub-hosted.
           For self-hosted, provide JSON array of runner LABELS,
-          e.g. ["self-hosted","bharath-machine"].
+          e.g. ["self-hosted","linux","x64","ghes-migration"].
         required: true
         default: "ubuntu-latest"
 
